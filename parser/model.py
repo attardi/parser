@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-from parser.modules import MLP, BertEmbedding, Biaffine, BiLSTM, CharLSTM
+from parser.modules import (MLP, BertEmbedding, Biaffine, BiLSTM, CharLSTM,
+                            MatrixTreeTheorem)
 from parser.modules.dropout import IndependentDropout, SharedDropout
 from parser.utils.alg import eisner
 from parser.utils.fn import istree
@@ -62,7 +63,8 @@ class Model(nn.Module):
                                  n_out=args.n_rels,
                                  bias_x=True,
                                  bias_y=True)
-        self.criterion = nn.CrossEntropyLoss()
+        self.mtt = MatrixTreeTheorem()
+        self.criterion = nn.CrossEntropyLoss(reduction='sum')
         self.pad_index = args.pad_index
         self.unk_index = args.unk_index
 
@@ -120,13 +122,14 @@ class Model(nn.Module):
         return s_arc, s_rel
 
     def get_loss(self, s_arc, s_rel, arcs, rels, mask):
-        s_arc, arcs = s_arc[mask], arcs[mask]
-        s_rel, rels = s_rel[mask], rels[mask]
-        s_rel = s_rel[torch.arange(len(arcs)), arcs]
-        arc_loss = self.criterion(s_arc, arcs)
+        total = mask.sum()
+        arc_loss, arc_probs = self.mtt(s_arc, mask, arcs)
+        arcs, rels = arcs[mask], rels[mask]
+        s_rel = s_rel[mask][torch.arange(len(arcs)), arcs]
         rel_loss = self.criterion(s_rel, rels)
+        loss = (arc_loss + rel_loss) / total
 
-        return arc_loss + rel_loss
+        return loss, arc_probs
 
     def decode(self, s_arc, s_rel, mask):
         lens = mask.sum(1)
