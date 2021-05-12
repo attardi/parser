@@ -371,3 +371,115 @@ class ChartField(Field):
             charts = [chart + [[self.eos_index]*len(chart[0])] for chart in charts]
         charts = [torch.tensor(chart) for chart in charts]
         return charts
+
+
+class EdField(RawField):
+    r"""
+    Represents Enhanced Dependencies and converts them to a list of pairs:
+    of :class:`~torch.Tensor`.
+    It holds a :class:`~supar.utils.vocab.Vocab` object that defines the set of possible
+    enhanced dependency label and their corresponding numerical representations.
+
+    Args:
+        name (str):
+            The name of the field.
+        pad_token (str):
+            The string token used as padding. Default: ``None``.
+    """
+
+    def __init__(self, name, pad='[PAD]', bos=None):
+        self.name = name
+        self.pad = pad
+        self.bos = bos
+        self.vocab = {}
+
+
+    def __repr__(self):
+        s, params = f"({self.name}): {self.__class__.__name__}(", []
+        if self.pad is not None:
+            params.append(f"pad={self.pad}")
+        s += ", ".join(params)
+        s += ")"
+
+        return s
+
+    @property
+    def pad_index(self):
+        if self.pad is None:
+            return 0
+        return self.vocab[self.pad]
+
+    @property
+    def device(self):
+        return 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+    def build(self, dataset):
+        r"""
+        Constructs a :class:`~supar.utils.vocab.Vocab` object for this field from the dataset.
+        If the vocabulary exists already, this function will have no effect.
+
+        Args:
+            dataset (Dataset):
+                A :class:`~supar.utils.data.Dataset` object.
+                One of the attributes should be named after the name of this field.
+        """
+
+        sequences = getattr(dataset, self.name)
+        counter = Counter(rel.split(':', 1)[1]
+                          for seq in sequences
+                          for rels in seq if rels != '_'
+                          for rel in rels.split('|')
+                          )
+        self.vocab = Vocab(counter, specials=[self.pad])
+
+
+    def transform(self, sequences):
+        r"""
+        Turns a list of sequences that use this field into  tensors of tensors.
+        e.g.
+        >>> field = EdField('rels')
+        >>> field.transform([['_', '18:obl:in', '8:conj:e', '18:obj|28:nsubj']])[0]
+        tensor([[0, 0, ...],
+         [0, 0, ..., vocab['obl:in']_18, ...],
+         [0, 0, ..., vocab['conj:e']_8, ...],
+         [0, 0, ..., vocab['obj']_18, ..., vocan[nsubj]_28, ...]])
+
+        Args:
+            sequences (list[list[str]]):
+                A list of sequences.
+
+        Returns:
+            A list of tensors transformed from the input sequences.
+        """
+
+        seqs = []
+        for seq in sequences:
+            dep_matrix = [[0] * (len(seq) + 1)] # + ROOT
+            for rels in seq:
+                deps = [0] * (len(seq) + 1) # + ROOT
+                if rels != '_':
+                    for rel in rels.split('|'):
+                        x = rel.split(':', 1)
+                        deps[int(x[0])] = self.vocab[x[1]]
+                dep_matrix.append(deps)
+            seqs.append(dep_matrix)
+
+        return [torch.tensor(seq) for seq in seqs]
+
+
+    def compose(self, sequences):
+        r"""
+        Composes a batch of sequences into a padded tensor.
+
+        Args:
+            sequences (list[~torch.Tensor]):
+                A list of tensors.
+
+        Returns:
+            A padded tensor converted to proper device.
+        """
+
+        return pad(sequences, self.pad_index).to(self.device)
+
+

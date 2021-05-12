@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 
-from .parsers import (BiaffineDependencyParser,
+from .parsers import (BiaffineDependencyParser, EnhancedDependencyParser,
                       BiaffineSemanticDependencyParser, CRF2oDependencyParser,
                       CRFConstituencyParser, CRFDependencyParser, Parser,
                       VIConstituencyParser, VIDependencyParser,
                       VISemanticDependencyParser)
 
 __all__ = ['BiaffineDependencyParser',
+           'EnhancedDependencyParser',
            'CRFDependencyParser',
            'CRF2oDependencyParser',
            'VIDependencyParser',
@@ -19,6 +20,7 @@ __all__ = ['BiaffineDependencyParser',
 __version__ = '1.1.0'
 
 PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
+                                             EnhancedDependencyParser,
                                              CRFDependencyParser,
                                              CRF2oDependencyParser,
                                              VIDependencyParser,

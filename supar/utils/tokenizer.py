@@ -5,10 +5,10 @@ class Tokenizer:
 
     def __init__(self, lang='en'):
         import stanza
-        try:
-            self.pipeline = stanza.Pipeline(lang=lang, processors='tokenize', verbose=False, tokenize_no_ssplit=True)
-        except Exception:
-            stanza.download(lang=lang, resources_url='stanford')
+        stanza.download(lang=lang, resources_url='stanford')
+        try:                    # with MWT
+            self.pipeline = stanza.Pipeline(lang=lang, processors='tokenize,mwt', verbose=False, tokenize_no_ssplit=True)
+        except Exception:       # no MWT
             self.pipeline = stanza.Pipeline(lang=lang, processors='tokenize', verbose=False, tokenize_no_ssplit=True)
 
     def __call__(self, text):

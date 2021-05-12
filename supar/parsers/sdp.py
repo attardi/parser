@@ -138,7 +138,7 @@ class BiaffineSemanticDependencyParser(Parser):
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_label = self.model(words, feats)
+            s_edge, s_label = self.model(words) # Attardi: , feats)
             loss = self.model.loss(s_edge, s_label, labels, mask)
             loss = loss / self.args.update_steps
             loss.backward()
@@ -164,7 +164,7 @@ class BiaffineSemanticDependencyParser(Parser):
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_label = self.model(words, feats)
+            s_edge, s_label = self.model(words) # Attardi: , feats)
             loss = self.model.loss(s_edge, s_label, labels, mask)
             total_loss += loss.item()
 

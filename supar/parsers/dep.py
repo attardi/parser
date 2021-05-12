@@ -5,15 +5,16 @@ import os
 import torch
 import torch.nn as nn
 from supar.models import (BiaffineDependencyModel, CRF2oDependencyModel,
-                          CRFDependencyModel, VIDependencyModel)
+                          CRFDependencyModel, VIDependencyModel,
+                          EnhancedDependencyModel)
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
-from supar.utils.field import ChartField, Field, RawField, SubwordField
+from supar.utils.field import ChartField, Field, RawField, SubwordField, EdField
 from supar.utils.fn import ispunct
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.metric import AttachmentMetric
-from supar.utils.transform import CoNLL
+from supar.utils.transform import CoNLL, CoNLL_U
 
 logger = get_logger(__name__)
 
@@ -30,7 +31,7 @@ class BiaffineDependencyParser(Parser):
         super().__init__(*args, **kwargs)
 
         self.WORD, self.TEXT, self.CHAR, self.BERT = self.transform.FORM
-        self.TAG = self.transform.CPOS
+        self.TAG = self.transform.POS
         self.ARC, self.REL = self.transform.HEAD, self.transform.DEPREL
 
     def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
@@ -292,7 +293,7 @@ class BiaffineDependencyParser(Parser):
         TEXT = RawField('texts')
         ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
         REL = Field('rels', bos=bos)
-        transform = CoNLL(FORM=(WORD, TEXT, CHAR, BERT), CPOS=TAG, HEAD=ARC, DEPREL=REL)
+        transform = CoNLL(FORM=(WORD, TEXT, CHAR, BERT), POS=TAG, HEAD=ARC, DEPREL=REL)
 
         train = Dataset(transform, args.train)
         if args.encoder == 'lstm':
@@ -816,7 +817,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
         ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
         SIB = ChartField('sibs', bos=bos, use_vocab=False, fn=CoNLL.get_sibs)
         REL = Field('rels', bos=bos)
-        transform = CoNLL(FORM=(WORD, TEXT, CHAR, BERT), CPOS=TAG, HEAD=(ARC, SIB), DEPREL=REL)
+        transform = CoNLL(FORM=(WORD, TEXT, CHAR, BERT), POS=TAG, HEAD=(ARC, SIB), DEPREL=REL)
 
         train = Dataset(transform, args.train)
         if args.encoder == 'lstm':
@@ -1052,3 +1053,113 @@ class VIDependencyParser(BiaffineDependencyParser):
         preds['rels'] = [self.REL.vocab[seq.tolist()] for seq in preds['rels']]
 
         return preds
+
+
+class EnhancedDependencyParser(BiaffineDependencyParser):
+    r"""
+    Parses Enhanced Dependencies.
+    """
+
+    NAME = 'enhanced-dependency'
+    MODEL = EnhancedDependencyModel
+
+    def __init__(self, *args, **kwargs):
+        super(BiaffineDependencyParser, self).__init__(*args, **kwargs) # skip base class
+        self.WORD, self.TEXT = self.transform.FORM
+        self.ARC, self.REL = self.transform.HEAD, self.transform.DEPREL
+        self.HEADS, self.RELS = self.transform.DEPS
+
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
+              punct=False, tree=False, proj=False, partial=False, verbose=True, **kwargs):
+        r"""
+        Args:
+            train/dev/test (list[list] or str):
+                Filenames of the train/dev/test datasets.
+            buckets (int):
+                The number of buckets that sentences are assigned to. Default: 32.
+            batch_size (int):
+                The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
+            punct (bool):
+                If ``False``, ignores the punctuation during evaluation. Default: ``False``.
+            tree (bool):
+                If ``True``, ensures to output well-formed trees. Default: ``False``.
+            proj (bool):
+                If ``True``, ensures to output projective trees. Default: ``False``.
+            partial (bool):
+                ``True`` denotes the trees are partially annotated. Default: ``False``.
+            verbose (bool):
+                If ``True``, increases the output verbosity. Default: ``True``.
+            kwargs (dict):
+                A dict holding unconsumed arguments for updating training configs.
+        """
+
+        return super().train(**Config().update(locals()))
+
+    @classmethod
+    def build(cls, path, min_freq=2, fix_len=20, **kwargs):
+        r"""
+        Build a brand-new Parser, including initialization of all data fields and model parameters.
+
+        Args:
+            path (str):
+                The path of the model to be saved.
+            min_freq (str):
+                The minimum frequency needed to include a token in the vocabulary.
+                Required if taking words as encoder input.
+                Default: 2.
+            fix_len (int):
+                The max length of all subword pieces. The excess part of each piece will be truncated.
+                Required if using CharLSTM/BERT.
+                Default: 20.
+            kwargs (dict):
+                A dict holding the unconsumed arguments.
+        """
+
+        args = Config(**locals())
+        args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        os.makedirs(os.path.dirname(path) or './', exist_ok=True)
+        if os.path.exists(path) and not args.build:
+            parser = cls.load(**args)
+            parser.model = cls.MODEL(**parser.args)
+            parser.model.load_pretrained(parser.WORD.embed).to(args.device)
+            return parser
+
+        logger.info("Building the fields")
+        from transformers import (AutoTokenizer, GPT2Tokenizer,
+                                  GPT2TokenizerFast)
+        t = AutoTokenizer.from_pretrained(args.bert)
+        WORD = SubwordField('words',
+                            pad=t.pad_token,
+                            unk=t.unk_token,
+                            bos=t.bos_token or t.cls_token,
+                            fix_len=args.fix_len,
+                            tokenize=t.tokenize,
+                            fn=None if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
+        WORD.vocab = t.get_vocab()
+        TEXT = RawField('texts')
+        ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
+        REL = Field('rels', bos=bos)
+        ARCS = Field('heads', use_vocab=False, fn=CoNLL.get_edges) # no bos
+        RELS = EdField('deps') # Enhanced dependencies
+        transform = CoNLL_U(FORM=(WORD, TEXT), HEAD=ARC, DEPREL=REL,
+                            DEPS=(ARCS, RELS))
+
+        train = Dataset(transform, args.train)
+        REL.build(train)
+        RELS.build(train)
+        args.update({
+            'n_words': len(WORD.vocab),
+            'n_rels': len(RELS.vocab),
+            'pad_index': WORD.pad_index,
+            'unk_index': WORD.unk_index,
+            'bos_index': WORD.bos_index
+        })
+        logger.info(f"{transform}")
+
+        logger.info("Building the model")
+        model = cls.MODEL(**args).load_pretrained(None).to(args.device)
+        logger.info(f"{model}\n")
+
+        return cls(args, model, transform)

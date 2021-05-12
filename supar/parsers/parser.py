@@ -39,11 +39,15 @@ class Parser(object):
         logger.info("Loading the data")
         train = Dataset(self.transform, args.train, **args)
         dev = Dataset(self.transform, args.dev)
-        test = Dataset(self.transform, args.test)
         train.build(args.batch_size//args.update_steps, args.buckets, True, dist.is_initialized())
         dev.build(args.batch_size, args.buckets)
-        test.build(args.batch_size, args.buckets)
-        logger.info(f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n{'test:':6} {test}\n")
+        logger.info(f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n")
+        if args.test:
+            test = Dataset(self.transform, args.test)
+            test.build(args.batch_size, args.buckets)
+            logger.info(f"{'test:':6} {test}\n")
+        else:
+            test = None
 
         if args.encoder == 'lstm':
             self.optimizer = Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
@@ -70,8 +74,9 @@ class Parser(object):
             self._train(train.loader)
             loss, dev_metric = self._evaluate(dev.loader)
             logger.info(f"{'dev:':5} loss: {loss:.4f} - {dev_metric}")
-            loss, test_metric = self._evaluate(test.loader)
-            logger.info(f"{'test:':5} loss: {loss:.4f} - {test_metric}")
+            if test:
+                loss, test_metric = self._evaluate(test.loader)
+                logger.info(f"{'test:':5} loss: {loss:.4f} - {test_metric}")
 
             t = datetime.now() - start
             if dev_metric > best_metric:
@@ -84,12 +89,14 @@ class Parser(object):
             elapsed += t
             if epoch - best_e >= args.patience:
                 break
-        loss, metric = self.load(**args)._evaluate(test.loader)
 
         logger.info(f"Epoch {best_e} saved")
         logger.info(f"{'dev:':5} {best_metric}")
-        logger.info(f"{'test:':5} {metric}")
+        if test:
+            loss, metric = self.load(**args)._evaluate(test.loader)
+            logger.info(f"{'test:':5} {metric}")
         logger.info(f"{elapsed}s elapsed, {elapsed / epoch}s/epoch")
+
 
     def evaluate(self, data, buckets=8, batch_size=5000, **kwargs):
         args = self.args.update(locals())

@@ -161,7 +161,7 @@ class BiaffineSemanticDependencyModel(Model):
                 scores of all possible labels on each edge.
         """
 
-        x = self.encode(words, feats)
+        x, attn = self.encode(words, feats) # attention
 
         edge_d = self.edge_mlp_d(x)
         edge_h = self.edge_mlp_h(x)

@@ -141,9 +141,10 @@ class Model(nn.Module):
             x = pack_padded_sequence(self.embed(words, feats), words.ne(self.args.pad_index).sum(1).tolist(), True, False)
             x, _ = self.encoder(x)
             x, _ = pad_packed_sequence(x, True, total_length=words.shape[1])
+            attn = None         # attention
         else:
-            x = self.encoder(words)
-        return self.encoder_dropout(x)
+            x, attn = self.encoder(words) # attention
+        return self.encoder_dropout(x), attn
 
     def decode(self):
         raise NotImplementedError
