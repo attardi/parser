@@ -43,6 +43,7 @@ def main():
     subparser.add_argument('--data', default='data/ptb/test.conllx', help='path to dataset')
     subparser.add_argument('--pred', default='pred.conllx', help='path to predicted result')
     subparser.add_argument('--prob', action='store_true', help='whether to output probs')
+    subparser.add_argument('--lang', default=None, help='language code for optional tokenization')
     parse(parser)
 
 
