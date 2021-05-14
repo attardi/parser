@@ -19,12 +19,16 @@ def main():
     subparser.add_argument('--buckets', default=32, type=int, help='max num of buckets to use')
     subparser.add_argument('--train', default='data/sdp/DM/train.conllu', help='path to train file')
     subparser.add_argument('--dev', default='data/sdp/DM/dev.conllu', help='path to dev file')
-    subparser.add_argument('--test', default='data/sdp/DM/test.conllu', help='path to test file')
+    subparser.add_argument('--test', help='path to test file')
     subparser.add_argument('--embed', default='data/glove.6B.100d.txt', help='path to pretrained embeddings')
     subparser.add_argument('--unk', default='unk', help='unk token in pretrained embeddings')
     subparser.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
     subparser.add_argument('--n-embed-proj', default=125, type=int, help='dimension of projected embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which BERT model to use')
+    subparser.add_argument('--attention-head', default=argparse.SUPPRESS, type=int,
+                           help='attention head')
+    subparser.add_argument('--attention-layer', default=argparse.SUPPRESS, type=int,
+                           help='attention layer')
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')

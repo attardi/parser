@@ -202,33 +202,30 @@ endif
 #----------------------------------------------------------------------
 # Targets
 
-.PRECIOUS: exp/$(CORPUS).$(BERT)$(VER)/model
+#DEP = .edp
+#DEP = .sdp
 
-TARGET=exp/$(CORPUS).$(BERT)$(VER)
+.PRECIOUS: exp$(DEP)/$(CORPUS).$(BERT)$(VER)/model
 
-# relate LANG to CORPUS
-exp/$(LANG)$(VER)%: $(TARGET)%
+TARGET=$(CORPUS).$(BERT)$(VER)
+
+# relate LANG to TARGET
+exp$(DEP)/$(LANG)%: exp$(DEP)/$(TARGET)%
 	@
 
-$(TARGET)/model:
+exp/$(TARGET)/model:
 	CUDA_VISIBLE_DEVICES=$(GPU) python -u -m supar.cmds.biaffine_dep train -d=$(GPU) -b -p=$@ \
 	   -c=$(CONFIG) $(MODEL) $(ATTN) \
 	   --train=$(CORPUS_TRAIN) $(MAX_SENT_LENGTH) $(BATCH_SIZE) $(BUCKETS) \
 	   --dev=$(CORPUS_DEV) --feat=$(FEAT) --encoder=bert --punct
 
-# relate LANG to CORPUS
-exp.edp/$(LANG)$(VER)%: $(TARGET).edp%
-	@
-
-$(TARGET).edp/model:
+exp.edp/$(TARGET)/model:
 	CUDA_VISIBLE_DEVICES=$(GPU) python -u -m supar.cmds.biaffine_edp train -d=$(GPU) -b -p=$@ \
 	   -c=$(CONFIG) $(MODEL) $(ATTN) \
 	   --train=$(CORPUS_TRAIN) $(MAX_SENT_LENGTH) $(BATCH_SIZE) $(BUCKETS) \
 	   --dev=$(CORPUS_DEV) --feat=$(FEAT) --encoder=bert --punct
 
-exp.sdp/$(LANG)$(VER)%: $(TARGET).sdp%
-	@
-$(TARGET).sdp/model:
+exp.sdp/$(TARGET)/model:
 	CUDA_VISIBLE_DEVICES=$(GPU) python -u -m supar.cmds.biaffine_sdp train -d=$(GPU) -b -p=$@ \
 	   -c=$(CONFIG) $(MODEL) $(ATTN) \
 	   --train=$(CORPUS_TRAIN) $(MAX_SENT_LENGTH) $(BATCH_SIZE) $(BUCKETS) \
@@ -240,11 +237,16 @@ $(TARGET).sdp/model:
 	   --pred=$@
 	python $(UD_TOOLS)/fix-root.py $@
 
-$(TARGET).dev.conllu: $(TARGET)/model
+exp/$(LANG).dev.conllu: exp/$(TARGET)/model
 	CUDA_VISIBLE_DEVICES=$(GPU) python -u -m supar.cmds.biaffine_dep predict -d=$(GPU) -p=$< --tree \
 	   --data=$(CORPUS_DEV) \
 	   --pred=$@
 #	python $(CORPUS_DIR)/../fix-root.py $@
+
+exp.sdp/$(LANG).dev.conllu: exp.sdp/$(TARGET)/model
+	CUDA_VISIBLE_DEVICES=$(GPU) python -u -m supar.cmds.biaffine_sdp predict -d=$(GPU) -p=$< \
+	   --data=$(CORPUS_DEV) \
+	   --pred=$@
 
 LANGS=ar bg cs en et fi fr it lt lv nl pl ru sk sv ta uk 
 XLMR_LANGS=bg cs en fr it nl ru
@@ -257,27 +259,27 @@ submission$(REL):
 
 all:
 	for l in $(LANGS); do \
-	    $(MAKE) -s GPU=$(GPU) LANG=$$l FEAT=$(FEAT) VER=$(VER) exp/$${l}$(VER).test.eval18 &>> exp/$${l}$(VER).test.make; \
+	    $(MAKE) -s GPU=$(GPU) LANG=$$l FEAT=$(FEAT) VER=$(VER) exp$(DEP)/$${l}$(VER).test.eval18 &>> exp$(DEP)/$${l}$(VER).test.make; \
 	done
 
 all-ud:
 	for l in $(UD_LANGS); do \
-	    $(MAKE) -s GPU=$(GPU) LANG=$$l FEAT=$(FEAT) VER=$(VER) exp/$${l}$(VER).test.eval18 &>> exp/$${l}$(VER).test.make; \
+	    $(MAKE) -s GPU=$(GPU) LANG=$$l FEAT=$(FEAT) VER=$(VER) exp$(DEP)/$${l}$(VER).test.eval18 &>> exp$(DEP)/$${l}$(VER).test.make; \
 	done
 
 dev:
 	for l in $(LANGS); do \
-	    $(MAKE) -s GPU=$(GPU) LANG=$$l FEAT=$(FEAT) VER=$(VER) exp/$${l}$(VER).dev.conllu &>> exp/$${l}$(VER).dev.make; \
+	    $(MAKE) -s GPU=$(GPU) LANG=$$l FEAT=$(FEAT) VER=$(VER) exp$(DEP)/$${l}$(VER).dev.conllu &>> exp$(DEP)/$${l}$(VER).dev.make; \
 	done
 
 eval18:
 	for l in $(LANGS); do \
-	    $(MAKE) -s GPU=$(GPU) LANG=$$l FEAT=$(FEAT) VER=$(VER) exp/$${l}$(VER).test.eval18 &>> exp/$${l}$(VER).test.make; \
+	    $(MAKE) -s GPU=$(GPU) LANG=$$l FEAT=$(FEAT) VER=$(VER) exp$(DEP)/$${l}$(VER).test.eval18 &>> exp$(DEP)/$${l}$(VER).test.make; \
 	done
 
 train:
 	for l in $(LANGS); do \
-	    ${MAKE} -s GPU=$(GPU) LANG=$$l exp/$$l$(VER)/model &>> exp/$${l}$(VER).train.make; \
+	    ${MAKE} -s GPU=$(GPU) LANG=$$l exp$(DEP)/$$l$(VER)/model &>> exp$(DEP)/$${l}$(VER).train.make; \
 	done
 
 # ----------------------------------------------------------------------
@@ -295,15 +297,15 @@ $(TARGET).test.evalb: $(TARGET).test.eval
 $(TARGET).test.eval18: $(TARGET).test.conllu
 	$(EVAL18) $(GOLD_TEST) $< > $@
 
-$(TARGET).dev.eval18: $(TARGET).dev.conllu
+%$(LANG).dev.eval18: %$(LANG).dev.conllu
 	$(EVAL18) $(CORPUS_DEV) $< > $@
 
 evaluate:
 	for l in $(LANGS); do \
-	   $(MAKE) -s GPU=$(GPU) LANG=$$l exp/$$l.$(BERT).test.evalb &>> exp/$$l.$(BERT).test.make; \
+	   $(MAKE) -s GPU=$(GPU) LANG=$$l exp$(DEP)/$$l.$(BERT).test.evalb &>> exp$(DEP)/$$l.$(BERT).test.make; \
 	done
 
-exp/test.eval: evaluate
+exp$(DEP)/test.eval: evaluate
 	( cd exp; python ../eval-summary.py > $(notdir $@) )
 
 # ----------------------------------------------------------------------
