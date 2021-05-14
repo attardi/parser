@@ -17,7 +17,7 @@ __all__ = ['BiaffineDependencyParser',
            'VISemanticDependencyParser',
            'Parser']
 
-__version__ = '1.1.0'
+__version__ = '1.1.1'
 
 PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
                                              EnhancedDependencyParser,
